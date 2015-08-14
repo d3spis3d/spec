@@ -146,6 +146,7 @@ struct
       | Abs -> abs_float
       | Ceil -> ceil
       | Floor -> floor
+      | Sqrt -> sqrt
       | Trunc -> fun _ -> 0.0  (* TODO *)
       | Round -> fun _ -> 0.0  (* TODO *)
     in fun v -> Float.to_value (f (Float.of_value 1 v))

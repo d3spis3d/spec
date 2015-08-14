@@ -14,7 +14,7 @@ let convert_pos pos =
 
 let region lexbuf =
   let left = convert_pos (Lexing.lexeme_start_p lexbuf) in
-  let right = convert_pos (Lexing.lexeme_end_p lexbuf) in 
+  let right = convert_pos (Lexing.lexeme_end_p lexbuf) in
   {Source.left = left; Source.right = right}
 
 let error lexbuf m = Error.error (region lexbuf) m
@@ -167,6 +167,7 @@ rule token = parse
   | "abs."(fxx as t) { UNARY (floatop t F32.Abs F64.Abs) }
   | "ceil."(fxx as t) { UNARY (floatop t F32.Ceil F64.Ceil) }
   | "floor."(fxx as t) { UNARY (floatop t F32.Floor F64.Floor) }
+  | "sqrt."(fxx as t) { UNARY (floatop t F32.Sqrt F64.Sqrt) }
   | "trunc."(fxx as t) { UNARY (floatop t F32.Trunc F64.Trunc) }
   | "round."(fxx as t) { UNARY (floatop t F32.Round F64.Round) }
 
