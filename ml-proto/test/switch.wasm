@@ -1,0 +1,61 @@
+;; (c) 2015 Andreas Rossberg
+
+(module
+  ;; Statement switch
+  (func $stmt (param $i i32) (result i32)
+    (local $j i32)
+    (setlocal $j (const.i32 100))
+    (label
+      (switch.i32 (getlocal $i)
+        (case 0 (return (getlocal $i)))
+        (case 1 (nop) fallthru)
+        (case 2)  ;; implicit fallthru
+        (case 3 (setlocal $j (neg.i32 (getlocal $i))) (break))
+        (case 4 (break))
+        (case 5 (setlocal $j (const.i32 101)))
+        (case 6 (setlocal $j (const.i32 101)) fallthru)
+        (;default;) (setlocal $j (const.i32 102))
+      )
+    )
+    (return (getlocal $j))
+  )
+
+  ;; Expression switch
+  (func $expr (param $i i64) (result i64)
+    (local $j i64)
+    (setlocal $j (const.i64 100))
+    (return
+      (label $l
+        (switch.i64 (getlocal $i)
+          (case 0 (return (getlocal $i)))
+          (case 1 (nop) fallthru)
+          (case 2)  ;; implicit fallthru
+          (case 3 (break $l (neg.i64 (getlocal $i))))
+          (case 6 (setlocal $j (const.i64 101)) fallthru)
+          (;default;) (getlocal $j)
+        )
+      )
+    )
+  )
+
+  (export "stmt" $stmt)
+  (export "expr" $expr)
+)
+
+(asserteq (invoke "stmt" (const.i32 0)) (const.i32 0))
+(asserteq (invoke "stmt" (const.i32 1)) (const.i32 -1))
+(asserteq (invoke "stmt" (const.i32 2)) (const.i32 -2))
+(asserteq (invoke "stmt" (const.i32 3)) (const.i32 -3))
+(asserteq (invoke "stmt" (const.i32 4)) (const.i32 100))
+(asserteq (invoke "stmt" (const.i32 5)) (const.i32 101))
+(asserteq (invoke "stmt" (const.i32 6)) (const.i32 102))
+(asserteq (invoke "stmt" (const.i32 7)) (const.i32 102))
+(asserteq (invoke "stmt" (const.i32 -10)) (const.i32 102))
+
+(asserteq (invoke "expr" (const.i64 0)) (const.i64 0))
+(asserteq (invoke "expr" (const.i64 1)) (const.i64 -1))
+(asserteq (invoke "expr" (const.i64 2)) (const.i64 -2))
+(asserteq (invoke "expr" (const.i64 3)) (const.i64 -3))
+(asserteq (invoke "expr" (const.i64 6)) (const.i64 101))
+(asserteq (invoke "expr" (const.i64 7)) (const.i64 100))
+(asserteq (invoke "expr" (const.i64 -10)) (const.i64 100))

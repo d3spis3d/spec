@@ -4,9 +4,12 @@
 
 type command = command' Source.phrase
 and command' =
-  | Define of Syntax.modul
-  | Invoke of int * Syntax.expr list
+  | Define of Ast.modul
+  | AssertInvalid of Ast.modul * string
+  | Invoke of string * Ast.expr list
+  | AssertEq of string * Ast.expr list * Ast.expr list
 
 type script = command list
 
-val run : script -> unit
+val run : script -> unit (* raises Error.Error *)
+val trace : string -> unit

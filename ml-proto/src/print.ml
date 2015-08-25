@@ -2,7 +2,7 @@
  * (c) 2015 Andreas Rossberg
  *)
 
-open Syntax
+open Ast
 open Source
 open Printf
 
@@ -12,7 +12,7 @@ open Printf
 open Types
 
 let func_type f =
-  let {Syntax.params; results; _} = f.it in
+  let {Ast.params; results; _} = f.it in
   {ins = List.map Source.it params; outs = List.map Source.it results}
 
 let string_of_table_type = function
@@ -26,11 +26,14 @@ let print_var_sig prefix i t =
 let print_func_sig prefix i f =
   printf "%s %d : %s\n" prefix i (Types.string_of_func_type (func_type f))
 
+let print_export_sig prefix n f =
+  printf "%s \"%s\" : %s\n" prefix n (Types.string_of_func_type (func_type f))
+
 let print_table_sig prefix i t_opt =
   printf "%s %d : %s\n" prefix i (string_of_table_type t_opt)
 
 
-(* Syntax *)
+(* Ast *)
 
 let print_func i f =
   print_func_sig "func" i f
@@ -38,8 +41,8 @@ let print_func i f =
 let print_global i t =
   print_var_sig "global" i t
 
-let print_export m i x =
-  print_func_sig "export" i (List.nth m.it.funcs x.it)
+let print_export m i ex =
+  print_export_sig "export" ex.it.name (List.nth m.it.funcs ex.it.func.it)
 
 let print_table m i tab =
   let t_opt =

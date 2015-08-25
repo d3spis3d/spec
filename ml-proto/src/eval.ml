@@ -3,7 +3,7 @@
  *)
 
 open Values
-open Syntax
+open Ast
 open Source
 
 let error = Error.error
@@ -12,12 +12,15 @@ let error = Error.error
 (* Module Instances *)
 
 type value = Values.value
-type func = Syntax.func
+type func = Ast.func
+
+module ExportMap = Map.Make(String)
+type export_map = func ExportMap.t
 
 type module_instance =
 {
   funcs : func list;
-  exports : func list;
+  exports : export_map;
   tables : func list list;
   globals : value ref list;
   memory : Memory.t
@@ -37,16 +40,19 @@ type config =
 }
 
 let lookup category list x =
-  try List.nth list x.it
-  with Invalid_argument _ ->
+  try List.nth list x.it with Failure _ ->
     error x.at ("runtime: undefined " ^ category ^ " " ^ string_of_int x.it)
 
-let export m x = lookup "export" m.exports x
 let func c x = lookup "function" c.modul.funcs x
 let global c x = lookup "global" c.modul.globals x
 let table c x y = lookup "entry" (lookup "table" c.modul.tables x) y
 let local c x = lookup "local" c.locals x
 let label c x = lookup "label" c.labels x
+
+let export m x =
+  try ExportMap.find x.it m.exports
+  with Not_found ->
+    error x.at ("runtime: undefined export " ^ x.it)
 
 module MakeLabel () =
 struct
@@ -117,7 +123,7 @@ let rec eval_expr c e =
   | Break (x, es) ->
     raise (label c x (eval_exprs c es))
 
-  | Switch (e1, arms, e2) ->
+  | Switch (_t, e1, arms, e2) ->
     let v = unary (eval_expr c e1) e1.at in
     (match List.fold_left (eval_arm c v) `Seek arms with
     | `Seek | `Fallthru -> eval_expr c e2
@@ -229,7 +235,7 @@ and eval_decl t =
 
 and eval_func m f vs =
   let module Return = MakeLabel () in
-  let locals = List.map ref vs @ List.map eval_decl f.it.locals in
+  let locals = List.map (fun v -> ref v) vs @ List.map eval_decl f.it.locals in
   let c = {modul = m; locals; labels = []; return = Return.label} in
   try eval_expr c f.it.body
   with Return.Label vs -> vs
@@ -238,20 +244,29 @@ and eval_func m f vs =
 (* Modules *)
 
 let init m =
-  let {Syntax.funcs; exports; tables; globals; memory = (n, _)} = m.it in
-  {
-    funcs = funcs;
-    exports = List.map (fun x -> List.nth funcs x.it) exports;
-    tables =
-      List.map (fun t -> List.map (fun x -> List.nth funcs x.it) t.it) tables;
-    globals = List.map eval_decl globals;
-    memory = Memory.create (Int64.to_int n)
-  }
+  let {Ast.funcs; exports; tables; globals; memory} = m.it in
+  let mem =
+    match memory with
+    | None -> Memory.create 0
+    | Some {it = {initial; segments; _}} ->
+      let mem = Memory.create initial in
+      Memory.init mem (List.map it segments);
+      mem
+  in
+  let func x = List.nth funcs x.it in
+  let export ex = ExportMap.add ex.it.name (func ex.it.func) in
+  let exports = List.fold_right export exports ExportMap.empty in
+  let tables = List.map (fun tab -> List.map func tab.it) tables in
+  let globals = List.map eval_decl globals in
+  {funcs; exports; tables; globals; memory = mem}
 
-let invoke m x vs =
-  let f = export m (x @@ Source.no_region) in
+let invoke m name vs =
+  let f = export m (name @@ no_region) in
   eval_func m f vs
 
-let eval m e =
-  let f = {params = []; results = []; locals = []; body = e} @@ Source.no_region
-  in unary (eval_func m f []) e.at
+let eval e =
+  let f = {params = []; results = []; locals = []; body = e} @@ no_region in
+  let memory = Memory.create 0 in
+  let exports = ExportMap.singleton "eval" f in
+  let m = {funcs = [f]; exports; tables = []; globals = []; memory} in
+  unary (eval_func m f []) e.at

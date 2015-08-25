@@ -1,0 +1,28 @@
+;; (c) 2015 Andreas Rossberg
+
+(module
+  (export "even" $even)
+  (export "odd" $odd)
+
+  (func $even (param $n i32) (result i32)
+    (if (eq.i32 (getlocal $n) (const.i32 0))
+      (const.i32 1)
+      (call $odd (sub.i32 (getlocal $n) (const.i32 1)))
+    )
+  )
+
+  (func $odd (param $n i32) (result i32)
+    (setglobal $scratch (getlocal $n))
+    (if (eq.i32 (getlocal $n) (const.i32 0))
+      (const.i32 0)
+      (call $even (sub.i32 (getlocal $n) (const.i32 1)))
+    )
+  )
+
+  (global $scratch i32)
+)
+
+(asserteq (invoke "even" (const.i32 13)) (const.i32 0))
+(asserteq (invoke "even" (const.i32 20)) (const.i32 1))
+(asserteq (invoke "odd" (const.i32 13)) (const.i32 1))
+(asserteq (invoke "odd" (const.i32 20)) (const.i32 0))

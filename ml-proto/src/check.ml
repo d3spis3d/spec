@@ -2,7 +2,7 @@
  * (c) 2015 Andreas Rossberg
  *)
 
-open Syntax
+open Ast
 open Source
 open Types
 
@@ -19,15 +19,18 @@ type context =
 {
   funcs : func_type list;
   globals : value_type list;
+  tables : func_type list;
   locals : value_type list;
   returns : expr_type;
-  labels : expr_type list;
-  tables : func_type list
+  labels : expr_type list
 }
 
+let c0 =
+  {funcs = []; globals = []; tables = [];
+   locals = []; returns = []; labels = []} 
+
 let lookup category list x =
-  try List.nth list x.it
-  with Invalid_argument _ ->
+  try List.nth list x.it with Failure _ ->
     error x.at ("unknown " ^ category ^ " " ^ string_of_int x.it)
 
 let func c x = lookup "function" c.funcs x
@@ -150,10 +153,11 @@ let rec check_expr c ts e =
   | Break (x, es) ->
     check_exprs c (label c x) es
 
-  | Switch (e1, arms, e2) ->
+  | Switch (t, e1, arms, e2) ->
+    require (t.it = Int32Type || t.it = Int64Type) t.at "invalid switch type";
     (* TODO: Check that cases are unique. *)
-    check_expr c [Int32Type] e1;
-    List.iter (check_arm c ts) arms;
+    check_expr c [t.it] e1;
+    List.iter (check_arm c t.it ts) arms;
     check_expr c ts e2
 
   | Call (x, es) ->
@@ -232,9 +236,9 @@ and check_exprs c ts = function
 and check_literal c ts l =
     check_type [type_value l.it] ts l.at
 
-and check_arm c ts arm =
+and check_arm c t ts arm =
   let {value = l; expr = e; fallthru} = arm.it in
-  check_literal c [Int32Type] l;
+  check_literal c [t] l;
   check_expr c (if fallthru then [] else ts) e
 
 
@@ -254,34 +258,46 @@ and check_arm c ts arm =
 
 let check_func c f =
   let {params; results; locals; body = e} = f.it in
-  let c' = {c with locals = List.map it (params @ locals);
+  let c' = {c with locals = List.map it params @ List.map it locals;
                   returns = List.map it results} in
   check_expr c' (List.map it results) e
 
-let check_table c table =
-  match table.it with
+let check_table c tab =
+  match tab.it with
   | [] ->
-    error table.at "empty table"
+    error tab.at "empty table"
   | x::xs ->
     let s = func c x in
     List.iter (fun xI -> check_func_type (func c xI) s xI.at) xs;
     {c with tables = c.tables @ [s]}
 
-let check_export c x =
-  ignore (func c x)
+module NameSet = Set.Make(String)
+
+let check_export c set ex =
+  let {name; func = x} = ex.it in
+  ignore (func c x);
+  require (not (NameSet.mem name set)) ex.at
+    "duplicate export name";
+  NameSet.add name set
+
+let check_segment size prev_end seg =
+  let seg_end = seg.it.Memory.addr + String.length seg.it.Memory.data in
+  require (seg.it.Memory.addr >= prev_end) seg.at
+    "data segment not disjoint and ordered";
+  require (size >= seg_end) seg.at
+    "data segment does not fit memory";
+  seg_end
+
+let check_memory memory =
+  require (memory.it.initial <= memory.it.max) memory.at
+    "initial memory size must be less than maximum";
+  ignore (List.fold_left (check_segment memory.it.initial) 0 memory.it.segments)
 
 let check_module m =
   let {funcs; exports; tables; globals; memory} = m.it in
-  let c =
-    {
-      funcs = List.map type_func funcs;
-      globals = List.map it globals;
-      locals = [];
-      returns = [];
-      tables = [];
-      labels = []
-    }
-  in
+  Lib.Option.app check_memory memory;
+  let c = {c0 with funcs = List.map type_func funcs;
+                 globals = List.map it globals} in
   let c' = List.fold_left check_table c tables in
   List.iter (check_func c') funcs;
-  List.iter (check_export c') exports
+  ignore (List.fold_left (check_export c') NameSet.empty exports)

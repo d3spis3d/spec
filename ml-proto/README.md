@@ -108,7 +108,7 @@ Here, the external format is S-expressions, but similar considerations would app
 
 ## Internal Syntax
 
-The core language is defined in `syntax.ml`, and looks as follows:
+The core language is defined in `ast.ml`, and looks as follows:
 
 ```
 type var = int
@@ -125,6 +125,7 @@ type expr =
   | Dispatch of var * expr * expr list  (* call function through table
   | Return of expr list                 (* return 0 to many value
   | Destruct of var list * expr         (* destructure multi-value into locals
+  | GetParam of var                     (* read parameter
   | GetLocal of var                     (* read local variable
   | SetLocal of var * expr              (* write local variable
   | GetGlobal of var                    (* read global variable
@@ -154,7 +155,7 @@ type: i32 | i64 | f32 | f64
 memtype: <type> | i8 | i16
 
 value: <int> | <float>
-var: <int>
+var: <int> | $<name>
 
 unop:  neg | abs | not | ...
 binop: add | sub | mul | ...
@@ -167,14 +168,15 @@ expr:
   ( if <expr> <expr> <expr> )
   ( if <expr> <expr> )                ;; = (if <expr> <expr> (nop))
   ( loop <expr>* )                    ;; = (loop (block <expr>*))
-  ( label <expr>* )                   ;; = (label (block <expr>*))
+  ( label <name>? <expr>* )           ;; = (label (block <expr>*))
   ( break <var> <expr>* )
   ( break )                           ;; = (break 0)
-  ( switch <expr> <case>* <expr> )
+  ( switch.<type> <expr> <case>* <expr> )
   ( call <var> <expr>* )
   ( dispatch <var> <expr> <expr>* )
   ( return <expr>* )
   ( destruct <var>* <expr> )
+  ( getparam <var> )
   ( getlocal <var> )
   ( setlocal <var> <expr> )
   ( getglobal <var> )
@@ -192,18 +194,22 @@ case:
   ( case <value> <expr>* fallthru? )  ;; = (case <int> (block <expr>*) fallthru?)
   ( case <value> )                    ;; = (case <int> (nop) fallthru)
 
-module: ( module <func>* <global>* <export>* <table>* <memory>? )
-func:   ( func <param>* <result>* <local>* <expr>* )
-param:  ( param <type>* )
+func:   ( func <name>? <param>* <result>* <local>* <expr>* )
+param:  ( param <type>* ) | ( param <name> <type> )
 result: ( result <type>* )
-local:  ( local <type>* )
-global: ( global <type>* )
-export: ( export <var>* )
+local:  ( local <type>* ) | ( local <name> <type> )
+
+module: ( module <func>* <global>* <export>* <table>* <memory>? <data>* )
+export: ( export "<char>*" <var> )
+global: ( global <type>* ) | ( global <name> <type> )
 table:  ( table <var>* )
-memory: ( memory int int? )
+memory: ( memory <int> <int>? )
+data:   ( data "<char>*" )
 ```
 
 Here, productions marked with respective comments are abbreviation forms for equivalent expansions.
+
+The data string is used to initialise the lower end of the memory. It is an ASCII string, that can have the usual escape sequences, or hex escapes of the form `\xx` to denote a single byte.
 
 Comments can be written in one of two ways:
 
@@ -224,10 +230,10 @@ In order to be able to check and run modules for testing purposes, the S-express
 script: <cmd>*
 
 cmd:
-  <module>                  ;; define, validate, and initialize module
-  ( invoke <var> <expr>* )  ;; invoke export and print result
-  <func>                    ;; = (module <func> (export 0))
-  ( invoke <expr>* )        ;; = (invoke 0 <expr>*)
+  <module>                                       ;; define, validate, and initialize module
+  ( invoke <name> <expr>* )                      ;; invoke export and print result
+  ( asserteq (invoke <name> <expr>* ) <expr>* )  ;; assert expected results of invocation
+  ( assertinvalid <module> <failure> )           ;; assert invalid module with given failure string
 ```
 
 Invocation is only possible after a module has been defined.
@@ -241,7 +247,7 @@ The interpreter also supports a "dry" mode (flag `-d`), in which modules are onl
 
 The implementation consists of the following parts:
 
-* *AST* (`syntax.ml`, `types.ml`, `source.ml[i]`). Notably, the `phrase` wrapper type around each AST node carries the source position information.
+* *Abstract Syntax* (`ast.ml`, `types.ml`, `source.ml[i]`). Notably, the `phrase` wrapper type around each AST node carries the source position information.
 
 * *Parser* (`lexer.mll`, `parser.mly`). Generated with ocamllex and ocamlyacc. The lexer does the opcode encoding (non-trivial tokens carry e.g. type information as semantic values, as declared in `parser.mly`), the parser the actual S-expression parsing.
 

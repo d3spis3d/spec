@@ -4,7 +4,7 @@
 
 {
 open Parser
-open Syntax
+open Ast
 
 let convert_pos pos =
   { Source.file = pos.Lexing.pos_fname;
@@ -22,20 +22,21 @@ let error_nest start lexbuf m =
   lexbuf.Lexing.lex_start_p <- start;
   error lexbuf m
 
-let convert_escape = function
-  | 'n' -> '\n'
-  | 't' -> '\t'
-  | '\\' -> '\\'
-  | '\'' -> '\''
-  | '\"' -> '\"'
-  | _ -> assert false
-
 let convert_text s =
   let b = Buffer.create (String.length s) in
   let i = ref 1 in
   while !i < String.length s - 1 do
-    Buffer.add_char b
-      (if s.[!i] <> '\\' then s.[!i] else (incr i; convert_escape s.[!i]));
+    let c = if s.[!i] <> '\\' then s.[!i] else
+      match (incr i; s.[!i]) with
+      | 'n' -> '\n'
+      | 't' -> '\t'
+      | '\\' -> '\\'
+      | '\'' -> '\''
+      | '\"' -> '\"'
+      | d ->
+        incr i;
+        Char.chr (int_of_string ("0x" ^ String.make 1 d ^ String.make 1 s.[!i]))
+    in Buffer.add_char b c;
     incr i
   done;
   Buffer.contents b
@@ -94,17 +95,18 @@ let memop d a s t =
 
 let space = [' ''\t']
 let digit = ['0'-'9']
+let hexdigit = ['0'-'9''a'-'f''A'-'F']
 let letter = ['a'-'z''A'-'Z']
 let symbol = ['+''-''*''/''\\''^''~''=''<''>''!''?''@''#''$''%''&''|'':''`']
 let tick = '\''
 let escape = ['n''t''\\''\'''\"']
-let character = [^'"''\\''\n'] | '\\'escape
+let character = [^'"''\\''\n'] | '\\'escape | '\\'hexdigit hexdigit
 
 let num = ('+' | '-')? digit+
 let int = num
 let float = (num '.' digit+) | num ('e' | 'E') num
 let text = '"' character* '"'
-let atom = (letter | digit | '_' | tick | symbol)*
+let name = '$' (letter | digit | '_' | tick | symbol)+
 
 let ixx = "i" ("32" | "64")
 let fxx = "f" ("32" | "64")
@@ -136,7 +138,6 @@ rule token = parse
   | "loop" { LOOP }
   | "label" { LABEL }
   | "break" { BREAK }
-  | "switch" { SWITCH }
   | "case" { CASE }
   | "fallthru" { FALLTHRU }
   | "call" { CALL }
@@ -157,6 +158,7 @@ rule token = parse
   | "set"(dist as d)(align as a)"."(mfxx as t) { SETMEMORY (memop d a ' ' t) }
 
   | "const."(nxx as t) { CONST (value_type t) }
+  | "switch."(nxx as t) { SWITCH (value_type t) }
 
   | "neg."(ixx as t) { UNARY (intop t I32.Neg I64.Neg) }
   | "abs."(ixx as t) { UNARY (intop t I32.Abs I64.Abs) }
@@ -243,13 +245,18 @@ rule token = parse
   | "result" { RESULT }
   | "local" { LOCAL }
   | "module" { MODULE }
+  | "memory" { MEMORY }
+  | "segment" { SEGMENT }
   | "global" { GLOBAL }
   | "import" { IMPORT }
   | "export" { EXPORT }
   | "table" { TABLE }
 
-  | "memory" { MEMORY }
+  | "assertinvalid" { ASSERTINVALID }
   | "invoke" { INVOKE }
+  | "asserteq" { ASSERTEQ }
+
+  | name as s { VAR s }
 
   | ";;"[^'\n']*eof { EOF }
   | ";;"[^'\n']*'\n' { Lexing.new_line lexbuf; token lexbuf }

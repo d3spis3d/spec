@@ -2,6 +2,25 @@
  * (c) 2015 Andreas Rossberg
  *)
 
+(*
+ * Throughout the implementation we use consistent naming conventions for
+ * syntactic elements, associated with the types defined here and in a few
+ * other places:
+ *
+ *   x : var
+ *   v : value
+ *   e : expr
+ *   f : func
+ *   m : modul
+ *
+ *   t : value_type
+ *   s : func_type
+ *   c : context / config
+ *
+ * These conventions mostly follow standard practice in language semantics.
+ *)
+
+
 open Values
 
 
@@ -58,7 +77,7 @@ and expr' =
   | Loop of expr
   | Label of expr
   | Break of var * expr list
-  | Switch of expr * arm list * expr
+  | Switch of value_type * expr * arm list * expr
   | Call of var * expr list
   | Dispatch of var * expr * expr list
   | Return of expr list
@@ -86,6 +105,15 @@ and arm' =
 
 (* Functions and Modules *)
 
+type memory = memory' Source.phrase
+and memory' =
+{
+  initial : Memory.size;
+  max : Memory.size;
+  segments : segment list;
+}
+and segment = Memory.segment Source.phrase
+
 type func = func' Source.phrase
 and func' =
 {
@@ -95,14 +123,17 @@ and func' =
   body : expr
 }
 
+type export = export' Source.phrase
+and export' = {name : string; func : var}
+
 type table = var list Source.phrase
 
 type modul = modul' Source.phrase
 and modul' =
 {
-  memory : int64 * int64;
+  memory : memory option;
   funcs : func list;
-  exports : var list;
+  exports : export list;
   tables : table list;
   globals : value_type list
 }

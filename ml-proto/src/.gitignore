@@ -4,6 +4,7 @@ parser.mli
 *.cmi
 *.cmo
 *.cmx
+*.exe
 *.o
 *.output
 *.depend
@@ -12,4 +13,4 @@ parser.mli
 *.opt
 *.zip
 _build
-
+wasm

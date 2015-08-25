@@ -5,8 +5,6 @@
 let name = "wasm"
 let version = "0.1"
 
-let trace name = if !Flags.trace then print_endline ("-- " ^ name)
-
 let load file =
   let f = open_in file in
   let size = in_channel_length f + 1 in
@@ -32,24 +30,30 @@ let parse name source =
 
 let process file source =
   try
-    trace "Parsing...";
+    Script.trace "Parsing...";
     let script = parse file source in
-    trace "Running...";
-    Script.run script
+    Script.trace "Running...";
+    Script.run script;
+    true
   with Error.Error (at, s) ->
-    trace "Error:";
-    prerr_endline (Source.string_of_region at ^ ": " ^ s)
+    Script.trace "Error:";
+    prerr_endline (Source.string_of_region at ^ ": " ^ s);
+    false
 
 let process_file file =
-  trace ("Loading (" ^ file ^ ")...");
+  Script.trace ("Loading (" ^ file ^ ")...");
   let source = load file in
-  process file source
+  if not (process file source) then exit 1
 
 let rec process_stdin () =
   print_string (name ^ "> "); flush_all ();
   match try Some (input_line stdin) with End_of_file -> None with
-  | None -> print_endline ""; trace "Bye."
-  | Some source -> process "stdin" source; process_stdin ()
+  | None ->
+    print_endline "";
+    Script.trace "Bye."
+  | Some source ->
+    ignore (process "stdin" source);
+    process_stdin ()
 
 let greet () =
   print_endline ("Version " ^ version)

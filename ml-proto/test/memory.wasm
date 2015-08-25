@@ -1,10 +1,50 @@
 ;; (c) 2015 Andreas Rossberg
 
+(module (memory 0 0))
+(module (memory 0 1))
+(module (memory 4096 16777216))
+(module (memory 0 0 (segment 0 "")))
+(module (memory 1 1 (segment 0 "a")))
+(module (memory 100 1000 (segment 0 "a") (segment 99 "b")))
+(module (memory 100 1000 (segment 0 "a") (segment 1 "b") (segment 2 "c")))
+(assertinvalid
+  (module (memory 1 0))
+  "initial memory size must be less than maximum")
+(assertinvalid
+  (module (memory 0 0 (segment 0 "a")))
+  "data segment does not fit memory")
+(assertinvalid
+  (module (memory 100 1000 (segment 0 "a") (segment 500 "b")))
+  "data segment does not fit memory")
+(assertinvalid
+  (module (memory 100 1000 (segment 0 "abc") (segment 0 "def")))
+  "data segment not disjoint and ordered")
+(assertinvalid
+  (module (memory 100 1000 (segment 3 "ab") (segment 0 "de")))
+  "data segment not disjoint and ordered")
+(assertinvalid
+  (module (memory 100 1000 (segment 0 "a") (segment 2 "b") (segment 1 "c")))
+  "data segment not disjoint and ordered")
+
 (module
-  (memory 1024)
+  (memory 1024 (segment 0 "ABC\a7D") (segment 20 "WASM"))
+
+  ;; Data section
+  (func $data (result i32)
+    (and.i32
+      (and.i32
+        (eq.i32 (getnearu.i8 (const.i32 0)) (const.i32 65))
+        (eq.i32 (getfaru.i8 (const.i64 3)) (const.i32 167))
+      )
+      (and.i32
+        (eq.i32 (getnearu.i8 (const.i32 20)) (const.i32 87))
+        (eq.i32 (getfaru.i8 (const.i64 23)) (const.i32 77))
+      )
+    )
+  )
 
   ;; Aligned read/write
-  (func (result i32)
+  (func $aligned (result i32)
     (local i32 i32 i32)
     (setlocal 0 (const.i32 10))
     (label
@@ -27,7 +67,7 @@
   )
 
   ;; Unaligned read/write
-  (func (result i32)
+  (func $unaligned (result i32)
     (local i32 f64 f64)
     (setlocal 0 (const.i32 10))
     (label
@@ -50,19 +90,24 @@
   )
 
   ;; Memory cast
-  (func (result f64)
+  (func $cast (result f64)
     (setnears.i64 (const.i32 8) (const.i64 -12345))
     (if
       (eq.f64 (getnear.f64 (const.i32 8)) (cast.i64.f64 (const.i64 -12345)))
       (return (const.f64 0))
     )
-    (setfarunaligneds.i16 (const.i64 3) (const.i32 -23423))
-    (return (getnear.f64 (const.i32 0)))
+    (setfarunaligneds.i64 (const.i64 9) (const.i64 0))
+    (setfarunaligneds.i16 (const.i64 15) (const.i32 16453))
+    (return (getnearunaligned.f64 (const.i32 9)))
   )
 
-  (export 0 1 2)
+  (export "data" $data)
+  (export "aligned" $aligned)
+  (export "unaligned" $unaligned)
+  (export "cast" $cast)
 )
 
-(invoke 0)
-(invoke 1)
-(invoke 2)
+(asserteq (invoke "data") (const.i32 1))
+(asserteq (invoke "aligned") (const.i32 1))
+(asserteq (invoke "unaligned") (const.i32 1))
+(asserteq (invoke "cast") (const.f64 42.0))
